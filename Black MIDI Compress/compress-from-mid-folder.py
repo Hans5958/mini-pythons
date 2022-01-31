@@ -10,6 +10,10 @@ OUT_DIR = ".\\out"
 INTACT_DIR = ".\\out-intact"
 ERROR_DIR = ".\\out-error"
 
+ULTRA_SETTINGS = ["-mx=9", "-mfb=64", "-md=64m", "-ms=256m"]
+ULTRA_2_SETTINGS = ["-mx=9", "-mfb=273", "-md=64m", "-ms=256m"]
+MAX_SETTINGS = ["-mx=9", "-mfb=273", "-ms", "-md=31", "-myx=9", "-mmt", "-md=1536m", "-mmf=bt3", "-mmc=10000", "-mpb=0", "-mlc=0"]
+
 SIZE_LIMIT = 1024000000
 
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -48,13 +52,13 @@ for file in files:
 	iteration = 0
 	done = 0
 
-	file_temp_path = os.path.splitext(os.path.join(TEMP_DIR, file))[0]
+	file_temp_path = os.path.splitext(os.path.join(TEMP_DIR, file))[0].rstrip() + '_'
 	
-	if same_file_name_exist(file, existing_files):
+	if same_file_name_exist(file, existing_files): 
 		print(f"Skipped: {file}")
 		print("(File existed on output dirs)")
 		continue
-	if not file.endswith("mid"):
+	if not file.lower().endswith("mid"):
 		print(f"Skipped: {file}")
 		print("(File is not a mid file)")
 		shutil.copy(os.path.join(IN_DIR, file), os.path.join(INTACT_DIR, file))
@@ -71,20 +75,22 @@ for file in files:
 		iteration += 1
 		after_file = os.path.join(file_temp_path, file + ".xz" * iteration)
 
-		before_size = os.stat(before_file).st_size	
-
-		subprocess.run([TZ_PATH, "a", "-mx=9", "-mfb=64", "-md=64m", "-ms=256m", after_file, before_file], stdout=subprocess.DEVNULL) #stdout=subprocess.DEVNULL
-		# os.system(f"\"{TZ_PATH}\" a -m0=lzma -mx=9 -mfb=64 -md=64m -ms=256m \"{after_file}\" \"{before_file}\"")
+		before_size = os.stat(before_file).st_size
+		
+		subprocess.run([TZ_PATH, "a"] + ULTRA_2_SETTINGS + [after_file, before_file], stdout=subprocess.DEVNULL) #stdout=subprocess.DEVNULL
 
 		after_size = os.stat(after_file).st_size
 		print(f"Iteration {iteration}: {humanize.naturalsize(before_size)} --> {humanize.naturalsize(after_size)} ({round(after_size*100/before_size, 5)}%)")
 
-		if iteration != 1 and after_size/before_size > 0.5:
+		if iteration != 1 and after_size/before_size > 0.75:
 			done = 1
 
 	if after_size/before_size > 0.95:
 		iteration -= 1
-		print(f"Last iteration is bigger. Using iteration {iteration}.")
+		if after_size/before_size > 1:
+			print(f"Last iteration is bigger. Using iteration {iteration}.")
+		else:
+			print(f"Last iteration has insignificant compression. Using iteration {iteration}.")
 		after_file = os.path.join(file_temp_path, file + ".xz" * iteration)
 		after_size = os.stat(after_file).st_size
 	

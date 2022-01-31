@@ -3,12 +3,17 @@ import os
 import shutil
 import subprocess
 import humanize
+import traceback
 
-IN_DIR = "..\\Black MIDIs in Archives"
+IN_DIR = ".\\in"
 TEMP_DIR = ".\\temp"
 OUT_DIR = ".\\out"
 INTACT_DIR = ".\\out-intact"
 ERROR_DIR = ".\\out-error"
+
+ULTRA_SETTINGS = ["-mx=9", "-mfb=64", "-md=64m", "-ms=256m"]
+ULTRA_2_SETTINGS = ["-mx=9", "-mfb=273", "-md=64m", "-ms=256m"]
+MAX_SETTINGS = ["-mx=9", "-mfb=273", "-ms", "-md=31", "-myx=9", "-mmt", "-md=1536m", "-mmf=bt3", "-mmc=10000", "-mpb=0", "-mlc=0"]
 
 SIZE_LIMIT = 1024000000
 
@@ -48,7 +53,7 @@ for file in files:
 	iteration = 0
 	done = 0
 
-	archive_temp_path = os.path.splitext(os.path.join(TEMP_DIR, file))[0]
+	archive_temp_path = os.path.splitext(os.path.join(TEMP_DIR, file))[0] + '_'
 	
 	if same_file_name_exist(file, existing_files):
 		print(f"Skipped: {file}")
@@ -106,7 +111,7 @@ for file in files:
 
 				before_size = os.stat(before_file).st_size	
 
-				subprocess.run([TZ_PATH, "a", "-mx=9", "-mfb=64", "-md=64m", "-ms=256m", after_file, before_file], stdout=subprocess.DEVNULL) #stdout=subprocess.DEVNULL
+				subprocess.run([TZ_PATH, "a"] + ULTRA_2_SETTINGS + [after_file, before_file], stdout=subprocess.DEVNULL) #stdout=subprocess.DEVNULL
 				# os.system(f"\"{TZ_PATH}\" a -m0=lzma -mx=9 -mfb=64 -md=64m -ms=256m \"{after_file}\" \"{before_file}\"")
 
 				after_size = os.stat(after_file).st_size
@@ -117,10 +122,13 @@ for file in files:
 
 			if after_size/before_size > 0.95:
 				iteration -= 1
-				print(f"Last iteration is bigger. Using iteration {iteration}.")
+				if after_size/before_size > 1:
+					print(f"Last iteration is bigger. Using iteration {iteration}.")
+				else:
+					print(f"Last iteration has insignificant compression. Using iteration {iteration}.")
 				after_file = os.path.join(archive_temp_path, archive_file + ".xz" * iteration)
 				after_size = os.stat(after_file).st_size
-			
+
 			print(f"Final: {humanize.naturalsize(initial_size)} --> {humanize.naturalsize(after_size)} ({round(after_size*100/initial_size, 5)}%)")
 			if initial_size > after_size:
 				shutil.move(after_file, os.path.join(OUT_DIR, archive_file + ".xz" * iteration))
@@ -132,6 +140,7 @@ for file in files:
 	
 	except:
 	
+		traceback.print_exc()
 		print(f"Skipped: {file}")
 		print("(Something went wrong. Copying into the error folder...)")
 		shutil.copy(os.path.join(IN_DIR, file), os.path.join(ERROR_DIR, file))
