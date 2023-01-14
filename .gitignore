@@ -1,0 +1,6 @@
+*/response*.json
+*/result.txt
+**/secret*
+**/*secret
+*/batch-file*
+**/*.json
