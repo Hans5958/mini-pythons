@@ -45,15 +45,14 @@ def move_playlist_contents(
 	log_debug_files=False
 ):
 
-	
-	request = youtube.playlistItems().list(
+	request_add = youtube.playlistItems().list(
 		part = "snippet",
 		maxResults = 50,
 		playlistId = origin_playlist
 	)
 
 	try:
-		response = request.execute()
+		response = request_add.execute()
 	except HttpError as err:
 		if err.resp.status in [404]:
 			print("Playlist not found. Ending.")
@@ -72,15 +71,13 @@ def move_playlist_contents(
 	# print(response)
 
 	video_ids = []
-	video_playlist_ids = []
-	added_video_ids = []
+	processed_video_ids = []
 
 	print("Authenticated!")
 	print("Printing page 1...")
 
 	for item in response["items"]:
-		video_ids.append(item["snippet"]['resourceId']['videoId'])
-		video_playlist_ids.append(item['id'])
+		video_ids.append((item["snippet"]['resourceId']['videoId'], item['id']))
 
 	total_pages = math.ceil(response["pageInfo"]["totalResults"]/response["pageInfo"]["resultsPerPage"])
 
@@ -94,18 +91,17 @@ def move_playlist_contents(
 
 			print(f"Printing page {curr_page}...")
 
-			request = youtube.playlistItems().list(
+			request_add = youtube.playlistItems().list(
 				part = "snippet",
 				maxResults = 50,
 				playlistId = origin_playlist,
 				pageToken = response["nextPageToken"]
 			)
 
-			response = request.execute()
+			response = request_add.execute()
 
 			for item in response["items"]:
-				video_ids.append(item["snippet"]['resourceId']['videoId'])
-				video_playlist_ids.append(item['id'])
+				video_ids.append((item["snippet"]['resourceId']['videoId'], item['id']))
 
 			if log_debug_files:
 				with open(f"response{curr_page}.json", "w") as f:
@@ -115,23 +111,22 @@ def move_playlist_contents(
 
 	if log_debug_files:
 
-		with open("videoids.json", "w") as f:
+		with open("videoids.txt", "w") as f:
 			f.write("\n".join(video_ids))
 
-		with open("videoplaylistids.json", "w") as f:
-			f.write("\n".join(video_playlist_ids))
-
 	# input("Press ENTER to continue.")
+    
+	video_ids.reverse()
 
 	print("Adding videos to the destination playlist...")
 
-	for video_id in video_ids:
+	for video_id, video_playlist_id in video_ids:
 		
-		if video_id in added_video_ids:
+		if video_id in processed_video_ids:
 			print(f"{video_id} skipped, entry is duplicate.")
 					
 		else:
-			request = youtube.playlistItems().insert(
+			request_add = youtube.playlistItems().insert(
 				part = "snippet",
 				body = {
 					"snippet": {
@@ -144,12 +139,21 @@ def move_playlist_contents(
 				}
 			)
 			
-			print(f"Adding {video_id}...")
+			request_remove = youtube.playlistItems().delete(
+				id = video_playlist_id
+			)
+			
+			print(f"Moving {video_id}... ", end="")
 			try:
-				request.execute()
-				added_video_ids.append(video_id)
+				request_add.execute()
+				print(f"Added. ", end="")
+				if move:
+					request_remove.execute()
+					print(f"Deleted.")
+				processed_video_ids.append(video_id)
 			except HttpError as err:
 				if err.resp.status in [404]:
+					print()
 					print(f"{video_id} not found. Skipping.")
 		
 	# insert_batch = youtube.new_batch_http_request()
@@ -170,52 +174,13 @@ def move_playlist_contents(
 
 	# response = insert_batch.execute()
 
-	if log_debug_files:
+	# if log_debug_files:
 
-		with open("responseinsert.json", "w") as f:
-			f.write(json.dumps(response))
+	# 	with open("responseinsert.json", "w") as f:
+	# 		f.write(json.dumps(response))
 
 	print("All videos have been added on the destination playlist!")
-
-	# input("Press ENTER to continue.")
-
-	if move:
-
-		print("Removing videos from the origin playlist...")
-
-		for video_playlist_id in video_playlist_ids:
-
-			request = youtube.playlistItems().delete(
-				id = video_playlist_id
-			)
-			
-			print(f"Removing {video_playlist_id}...")
-			
-			try:
-				request.execute()
-			except HttpError as err:
-				if err.resp.status in [404]:
-					time.sleep(0)
-
-		# delete_batch = youtube.new_batch_http_request()
-
-		# for video_playlist_id in video_playlist_ids:
-		# 	delete_batch.add(youtube.playlistItems().delete(
-		# 		id = video_playlist_id
-		# 	))
-
-		# response = delete_batch.execute()
-
-		if log_debug_files:
-
-			with open("responsedelete.json", "w") as f:
-				f.write(json.dumps(response))
-
-		print("All videos on the origin playlist have been removed!")
-		
 	print("All done!")
-
-scopes = ["https://www.googleapis.com/auth/youtube"]
 
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
@@ -224,11 +189,24 @@ api_version = "v3"
 client_secrets_file = args.client_secrets_file
 
 flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
-	client_secrets_file, scopes)
+	client_secrets_file, 
+	[
+		"https://www.googleapis.com/auth/youtube.force-ssl"
+	],
+	redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+)
+
+auth_url, _ = flow.authorization_url(prompt='consent')
+
+print('Please go to this URL: {}'.format(auth_url))
+code = input('Enter the authorization code: ')
+
 try:
-	credentials = flow.run_console()
+	flow.fetch_token(code=code)
+	credentials = flow.credentials
 except:
-	sys.exit("That code does not work! Try again!")
+	print("That code does not work! Try again!")
+	exit()
 youtube = googleapiclient.discovery.build(
 	api_service_name, api_version, credentials=credentials)
 
